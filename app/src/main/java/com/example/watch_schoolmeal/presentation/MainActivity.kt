@@ -4,11 +4,14 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import android.os.Bundle
-import android.text.style.TtsSpan.TextBuilder
+import android.util.Log
+import android.view.SubMenu
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.rememberScrollableState
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,7 +20,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,20 +32,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.rotary.RotaryScrollEvent
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
-import androidx.compose.ui.modifier.modifierLocalMapOf
-import androidx.compose.ui.semantics.Role.Companion.Button
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
-import androidx.wear.tiles.LayoutElementBuilders
-import androidx.wear.tiles.RequestBuilders
-import androidx.wear.tiles.TileBuilders
-import androidx.wear.tiles.TileService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -116,6 +113,8 @@ fun WearApp() {
         tmrD = tmr[2]
     }
 
+    val scrollState = rememberScrollState()
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -165,7 +164,8 @@ fun WearApp() {
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
-                    modifier = Modifier,
+                    modifier = Modifier
+                        .verticalScroll(scrollState),
                     textAlign = TextAlign.Center,
                     color = Color.White,
                     fontSize = 12.sp,
@@ -179,24 +179,112 @@ fun WearApp() {
             else {Text(text = "→ ", color = Color.Gray, textAlign = TextAlign.Center, fontSize = 30.sp)}
         }
     }
+
 }
 
 suspend fun GetSchoolMeal(day: String): Array<String> {
     return withContext(Dispatchers.IO) {
         try {
+            // Get the school meal data from the API
             var breakfast = ""
             var lunch = ""
             var dinner = ""
-            val docs = Jsoup.connect("https://open.neis.go.kr/hub/mealServiceDietInfo?KEY=67c2bd83a7e14117a89cd682f1bb8673&Type=json&ATPT_OFCDC_SC_CODE=J10&SD_SCHUL_CODE=7530851&MLSV_YMD=${day}").ignoreContentType(true).get().select("body").toString()
-            val schoolMealJSON = JSONObject(docs.substring(docs.indexOf("{"), docs.lastIndexOf("}") + 1))
-            val data1 = schoolMealJSON.getJSONArray("mealServiceDietInfo")
-            val data2 = JSONObject(data1[1].toString())
-            val data3 = data2.getJSONArray("row")
-            try {breakfast = JSONObject(data3[0].toString())["DDISH_NM"].toString().replace("\n", "").replace("<br>", "\n").replace("&amp;", "&").replace(Regex("\\(.*?\\)"), "").trim()} catch (e: Exception) {breakfast = "아침 정보가 없습니다."}
-            try {lunch = JSONObject(data3[1].toString())["DDISH_NM"].toString().replace("\n", "").replace("<br>", "\n").replace("&amp;", "&").replace(Regex("\\(.*?\\)"), "").trim()} catch (e: Exception) {lunch = "점심 정보가 없습니다."}
-            try {dinner = JSONObject(data3[2].toString())["DDISH_NM"].toString().replace("\n", "").replace("<br>", "\n").replace("&amp;", "&").replace(Regex("\\(.*?\\)"), "").trim()} catch (e: Exception) {dinner = "저녁 정보가 없습니다."}
-            arrayOf(breakfast.toString(), lunch.toString(), dinner.toString())
+            val studentMealData = Jsoup.connect("https://food.podac.poapper.com/v2/menus/period/$day/$day")
+                .ignoreContentType(true)
+                .get()
+                .text()
+
+            val mealNames = mutableMapOf<String, String>()
+            val schoolMealJSON = JSONObject(studentMealData).getJSONObject(day)
+
+            val mealTypes = listOf("BREAKFAST_A", "BREAKFAST_B", "LUNCH", "DINNER", "STAFF", "INTERNATIONAL")
+
+            for (mealType in mealTypes) {
+                // Skip if the meal type is not in the JSON
+                if (!schoolMealJSON.has(mealType)) {
+                    mealNames[mealType] = "없음"
+                    continue
+                }
+                val foods = schoolMealJSON.getJSONObject(mealType).getJSONArray("foods")
+                val mealNameBuilder = StringBuilder()
+
+                for (i in 0 until foods.length()) {
+                    val food = foods.getJSONObject(i)
+                    mealNameBuilder.append(food.getString("name_kor"))
+                    if (i < foods.length() - 1) {
+                        mealNameBuilder.append("\n")
+                    }
+                }
+
+                mealNames[mealType] = mealNameBuilder.toString()
+            }
+
+            breakfast = mealNames["BREAKFAST_A"] + "\n\n[간편식]\n" + mealNames["BREAKFAST_B"]
+            lunch = mealNames["LUNCH"].toString()
+            dinner = mealNames["DINNER"].toString()
+
+            // Get the RIST meal data from the API
+            val RISTMenuData = Jsoup.connect("https://puls2.pulmuone.com/src/sql/menu/today_sql.php")
+                .data("requestId", "search_schMenu")
+                .data("requestParam",
+                        "{" +
+                            "\"srchOperCd\":\"O000002\"," +
+                            "\"srchAssignCd\":\"S000591\"," +
+                            "\"srchCurDay\":\"$day\"" +
+                        "}"
+                )
+                .ignoreContentType(true)
+                .post()
+                .text()
+            val RISTMenuJSON = JSONObject(RISTMenuData)
+            Log.d("SchoolMeal", RISTMenuJSON.toString())
+
+            val RISTMenus = RISTMenuJSON.getJSONArray("data")
+            val RISTTimeCode = arrayOf("010", "020", "030") // Breakfast, Lunch, Dinner
+            val RISTMealNames = mutableMapOf<String, String>()
+
+            for (i in 0 until RISTMenus.length()) {
+                val RISTMenuInfo = RISTMenus.getJSONArray(i)
+                val mealType = arrayOf("breakfast", "lunch", "dinner")[
+                    RISTTimeCode.indexOf(RISTMenuInfo[0].toString())
+                ]
+
+                val MenuName = RISTMenuInfo[6].toString()
+                val MainMenu = RISTMenuInfo[1].toString()
+                var SubMenu = RISTMenuInfo[5].toString()
+
+                if("샐러드" in MenuName.toString()) SubMenu = ""
+
+                val MenuString = ("$MainMenu $SubMenu")
+                    .trim()
+                    .replace("  ", " ")
+                    .replace(" ", "\n")
+                    .replace("＆", "\n")
+                    .trim()
+
+                if(RISTMealNames.containsKey(mealType)) {
+                    RISTMealNames[mealType] += "\n[RIST $MenuName]\n$MenuString\n"
+                } else {
+                    RISTMealNames[mealType] = "\n[RIST $MenuName]\n$MenuString\n"
+                }
+            }
+
+            if (RISTMealNames.containsKey("breakfast")) {
+                breakfast += "\n" + RISTMealNames["breakfast"].toString()
+            }
+            if (RISTMealNames.containsKey("lunch")) {
+                lunch += "\n" + RISTMealNames["lunch"].toString()
+            }
+            if (RISTMealNames.containsKey("dinner")) {
+                dinner += "\n" + RISTMealNames["dinner"].toString()
+            }
+
+            Log.d("SchoolMeal", "Breakfast: $breakfast")
+            Log.d("SchoolMeal", "Lunch: $lunch")
+            Log.d("SchoolMeal", "Dinner: $dinner")
+            arrayOf(breakfast, lunch, dinner)
         } catch (e: Exception) {
+            Log.e("SchoolMeal", "Error: $e")
             arrayOf("", "", "")
         }
     }
