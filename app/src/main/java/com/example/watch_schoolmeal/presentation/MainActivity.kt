@@ -239,49 +239,47 @@ suspend fun GetSchoolMeal(day: String): Array<String> {
             val RISTMenuJSON = JSONObject(RISTMenuData)
             Log.d("SchoolMeal", RISTMenuJSON.toString())
 
-            val RISTMenus = RISTMenuJSON.getJSONArray("data")
-            val RISTTimeCode = arrayOf("010", "020", "030") // Breakfast, Lunch, Dinner
-            val RISTMealNames = mutableMapOf<String, String>()
+            if(RISTMenuJSON.getString("closeGb") != "1") {
+                val RISTMenus = RISTMenuJSON.getJSONArray("data")
+                val RISTTimeCode = arrayOf("010", "020", "030") // Breakfast, Lunch, Dinner
+                val RISTMealNames = mutableMapOf<String, String>()
 
-            for (i in 0 until RISTMenus.length()) {
-                val RISTMenuInfo = RISTMenus.getJSONArray(i)
-                val mealType = arrayOf("breakfast", "lunch", "dinner")[
-                    RISTTimeCode.indexOf(RISTMenuInfo[0].toString())
-                ]
+                for (i in 0 until RISTMenus.length()) {
+                    val RISTMenuInfo = RISTMenus.getJSONArray(i)
+                    val mealType = arrayOf("breakfast", "lunch", "dinner")[
+                        RISTTimeCode.indexOf(RISTMenuInfo[0].toString())
+                    ]
 
-                val MenuName = RISTMenuInfo[6].toString()
-                val MainMenu = RISTMenuInfo[1].toString()
-                var SubMenu = RISTMenuInfo[5].toString()
+                    val MenuName = RISTMenuInfo[6].toString()
+                    val MainMenu = RISTMenuInfo[1].toString()
+                    var SubMenu = RISTMenuInfo[5].toString()
 
-                if("샐러드" in MenuName.toString()) SubMenu = ""
+                    if ("샐러드" in MenuName.toString()) SubMenu = ""
 
-                val MenuString = ("$MainMenu $SubMenu")
-                    .trim()
-                    .replace("  ", " ")
-                    .replace(" ", "\n")
-                    .replace("＆", "\n")
-                    .trim()
+                    val MenuString = ("$MainMenu $SubMenu")
+                        .trim()
+                        .replace("  ", " ")
+                        .replace(" ", "\n")
+                        .replace("＆", "\n")
+                        .trim()
 
-                if(RISTMealNames.containsKey(mealType)) {
-                    RISTMealNames[mealType] += "\n[RIST $MenuName]\n$MenuString\n"
-                } else {
-                    RISTMealNames[mealType] = "\n[RIST $MenuName]\n$MenuString\n"
+                    if (RISTMealNames.containsKey(mealType)) {
+                        RISTMealNames[mealType] += "\n[RIST $MenuName]\n$MenuString\n"
+                    } else {
+                        RISTMealNames[mealType] = "\n[RIST $MenuName]\n$MenuString\n"
+                    }
+                }
+
+                if (RISTMealNames.containsKey("breakfast")) {
+                    breakfast += "\n" + RISTMealNames["breakfast"].toString()
+                }
+                if (RISTMealNames.containsKey("lunch")) {
+                    lunch += "\n" + RISTMealNames["lunch"].toString()
+                }
+                if (RISTMealNames.containsKey("dinner")) {
+                    dinner += "\n" + RISTMealNames["dinner"].toString()
                 }
             }
-
-            if (RISTMealNames.containsKey("breakfast")) {
-                breakfast += "\n" + RISTMealNames["breakfast"].toString()
-            }
-            if (RISTMealNames.containsKey("lunch")) {
-                lunch += "\n" + RISTMealNames["lunch"].toString()
-            }
-            if (RISTMealNames.containsKey("dinner")) {
-                dinner += "\n" + RISTMealNames["dinner"].toString()
-            }
-
-            Log.d("SchoolMeal", "Breakfast: $breakfast")
-            Log.d("SchoolMeal", "Lunch: $lunch")
-            Log.d("SchoolMeal", "Dinner: $dinner")
             arrayOf(breakfast, lunch, dinner)
         } catch (e: Exception) {
             Log.e("SchoolMeal", "Error: $e")
